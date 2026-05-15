@@ -73,9 +73,7 @@ class VpnController {
       VlessConfigBuilder.fromShareLink(server.shareLink);
 
   Future<int> measureDelay(ServerNode server) async {
-    if (isConnected) {
-      return _v2ray.getConnectedServerDelay();
-    }
+    // 10815 (tun SOCKS) с паролем — getConnectedServerDelay без auth не подходит.
     final config = await _securedConfig(server);
     return _v2ray.getServerDelay(config: config);
   }
