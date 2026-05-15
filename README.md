@@ -28,6 +28,8 @@ APK: `build/app/outputs/flutter-apk/app-tv-release.apk`
 
 TV-сборка: упрощённый UI под пульт (сервер + подключение), без ping и без обхода приложений (`direct_android`). Иконка в лаунчере TV через `LEANBACK_LAUNCHER`.
 
+Подробнее: **[docs/android-tv.md](docs/android-tv.md)** (патчи плагина, Mi Box, ADB, контекст для Cursor).
+
 ## Ручной тест Android TV
 
 1. Установить `app-tv-release.apk` на приставку или эмулятор Android TV (API 28+).
