@@ -6,6 +6,7 @@ import 'package:vpn_permission/vpn_permission.dart';
 
 import '../constants/app_constants.dart';
 import '../models/server_node.dart';
+import 'vless_config_builder.dart';
 
 class VpnController {
   VpnController() : _v2ray = FlutterV2ray();
@@ -57,11 +58,15 @@ class VpnController {
 
   Future<bool> hasPermission() => VpnPermission.checkPermission();
 
+  Future<String> _securedConfig(ServerNode server) =>
+      VlessConfigBuilder.fromShareLink(server.shareLink);
+
   Future<int> measureDelay(ServerNode server) async {
     if (isConnected) {
       return _v2ray.getConnectedServerDelay();
     }
-    return _v2ray.getServerDelay(config: server.configJson);
+    final config = await _securedConfig(server);
+    return _v2ray.getServerDelay(config: config);
   }
 
   Future<void> connect(ServerNode server) async {
@@ -69,9 +74,10 @@ class VpnController {
     if (!allowed) {
       throw StateError('Разрешение VPN не предоставлено');
     }
+    final config = await _securedConfig(server);
     await _v2ray.startVless(
       remark: server.remark,
-      config: server.configJson,
+      config: config,
       bypassSubnets: const ['0.0.0.0/0'],
       proxyOnly: false,
       notificationDisconnectButtonName: 'Отключить',

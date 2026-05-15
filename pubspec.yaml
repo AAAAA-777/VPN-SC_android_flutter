@@ -9,7 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_v2ray_plus: ^1.1.3
+  flutter_v2ray_plus:
+    path: packages/flutter_v2ray_plus
   vpn_permission: ^0.0.2
   http: ^1.2.2
   shared_preferences: ^2.3.3

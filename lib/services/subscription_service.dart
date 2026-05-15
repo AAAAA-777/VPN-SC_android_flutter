@@ -5,6 +5,8 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/server_node.dart';
+import 'local_proxy_auth.dart';
+import 'vless_config_builder.dart';
 
 class SubscriptionResult {
   const SubscriptionResult({
@@ -53,7 +55,7 @@ class SubscriptionService {
         );
       }
 
-      final servers = _parseBody(response.body);
+      final servers = await _parseBody(response.body);
       if (servers.isEmpty) {
         final cached = await _loadCache();
         return SubscriptionResult(
@@ -75,7 +77,7 @@ class SubscriptionService {
     }
   }
 
-  List<ServerNode> _parseBody(String body) {
+  Future<List<ServerNode>> _parseBody(String body) async {
     final text = _normalizeBody(body.trim());
     final lines = text
         .split(RegExp(r'\r?\n'))
@@ -94,12 +96,14 @@ class SubscriptionService {
       try {
         final parsed = FlutterV2ray.parseFromURL(line);
         final remark = parsed.remark.isNotEmpty ? parsed.remark : 'Сервер ${i + 1}';
+        final baseConfig = parsed.getFullConfiguration();
+        final creds = await LocalProxyAuth.getOrCreate();
         servers.add(
           ServerNode(
             id: '${remark}_$i',
             remark: remark,
             shareLink: line,
-            configJson: parsed.getFullConfiguration(),
+            configJson: VlessConfigBuilder.applyLocalProxyAuth(baseConfig, creds),
           ),
         );
       } catch (_) {

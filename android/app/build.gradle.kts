@@ -20,7 +20,7 @@ android {
 
     defaultConfig {
         applicationId = "com.vpnsc.client"
-        minSdk = 23
+        minSdk = flutter.minSdkVersion
         targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
