@@ -46,11 +46,14 @@ class VlessConfigBuilder {
     return jsonEncode(config);
   }
 
-  /// Трафик к зонам .ru / .рф и geosite:ru — в outbound [direct] (минуя прокси).
+  /// Punycode зоны .рф (без кириллицы в конфиге Xray).
+  static const rfZonePunycode = 'xn--p1ai';
+
+  /// Трафик к зонам .ru и .рф (через regexp + punycode) — outbound [direct].
   static void _applyDirectZoneRouting(Map<String, dynamic> config) {
     final routing =
         (config['routing'] as Map<String, dynamic>?) ?? <String, dynamic>{};
-    routing['domainStrategy'] = 'IPIfNonMatch';
+    routing['domainStrategy'] = 'AsIs';
 
     final rules =
         (routing['rules'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ??
@@ -59,10 +62,8 @@ class VlessConfigBuilder {
     rules.insert(0, {
       'type': 'field',
       'domain': [
-        'geosite:ru',
-        r'regexp:.*\.ru$',
-        r'regexp:.*\.xn--p1ai$',
-        r'regexp:.*\.рф$',
+        r'regexp:(?i)(^|.*\.)ru$',
+        'regexp:(?i)(^|.*\\.)$rfZonePunycode\$',
       ],
       'outboundTag': 'direct',
     });

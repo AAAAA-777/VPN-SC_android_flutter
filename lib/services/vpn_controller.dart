@@ -85,6 +85,12 @@ class VpnController {
     if (!allowed) {
       throw StateError('Разрешение VPN не предоставлено');
     }
+    // Сброс зависшего VPN после неудачного подключения.
+    final state = status.value.state.toUpperCase();
+    if (state == 'CONNECTED' || state == 'CONNECTING') {
+      await disconnect();
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+    }
     final config = await _securedConfig(server);
     if (_bypassApps.isEmpty) {
       await refreshBypassApps();
