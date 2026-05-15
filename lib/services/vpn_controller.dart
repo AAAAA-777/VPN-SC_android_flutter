@@ -63,10 +63,14 @@ class VpnController {
   bool get isConnected =>
       status.value.state.toUpperCase() == 'CONNECTED';
 
-  /// Запрос системного разрешения VPN через [vpn_permission].
+  /// Запрос системного разрешения VPN.
   Future<bool> requestPermission() async {
     if (await VpnPermission.checkPermission()) {
       return true;
+    }
+    // На TV только VpnService.prepare через v2ray — без второго диалога vpn_permission.
+    if (AppEnvironment.current.isTv) {
+      return _v2ray.requestPermission();
     }
     final granted = await VpnPermission.requestPermission(
       providerBundleIdentifier: AppEnvironment.current.providerBundleIdentifier,
@@ -76,7 +80,6 @@ class VpnController {
     if (granted) {
       return true;
     }
-    // Резервный запрос через ядро v2ray (тот же системный диалог на Android).
     return _v2ray.requestPermission();
   }
 

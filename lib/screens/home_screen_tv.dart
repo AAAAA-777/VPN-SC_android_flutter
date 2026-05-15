@@ -29,6 +29,7 @@ class _HomeScreenTvState extends State<HomeScreenTv> {
   bool _loading = true;
   bool _connectBusy = false;
   String? _bannerMessage;
+  String? _statusMessage;
 
   static const _selectedKey = 'selected_server_id_tv';
 
@@ -109,14 +110,22 @@ class _HomeScreenTvState extends State<HomeScreenTv> {
   Future<void> _connect() async {
     final server = _selected;
     if (server == null) {
-      _showMessage('Выберите сервер');
+      setState(() => _statusMessage = 'Выберите сервер');
       return;
     }
-    setState(() => _connectBusy = true);
+    setState(() {
+      _connectBusy = true;
+      _statusMessage = 'Подключение…';
+    });
     try {
       await _vpn!.connect(server);
+      if (!mounted) return;
+      setState(() => _statusMessage = null);
+      _connectFocus.requestFocus();
     } catch (e) {
-      _showMessage('$e');
+      if (!mounted) return;
+      setState(() => _statusMessage = '$e');
+      _connectFocus.requestFocus();
     } finally {
       if (mounted) setState(() => _connectBusy = false);
     }
@@ -129,13 +138,6 @@ class _HomeScreenTvState extends State<HomeScreenTv> {
     } finally {
       if (mounted) setState(() => _connectBusy = false);
     }
-  }
-
-  void _showMessage(String text) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(text)),
-    );
   }
 
   @override
@@ -187,22 +189,8 @@ class _HomeScreenTvState extends State<HomeScreenTv> {
             ],
           ),
         ),
-        if (_bannerMessage != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: Material(
-              color: Colors.orange.shade900.withValues(alpha: 0.85),
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Text(
-                  _bannerMessage!,
-                  style: const TextStyle(fontSize: 14),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
-          ),
+        if (_bannerMessage != null) _buildInfoBanner(_bannerMessage!, Colors.orange.shade900),
+        if (_statusMessage != null) _buildInfoBanner(_statusMessage!, Colors.red.shade900),
         const Padding(
           padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
           child: Text(
@@ -238,6 +226,24 @@ class _HomeScreenTvState extends State<HomeScreenTv> {
                     ),
         ),
       ],
+    );
+  }
+
+  Widget _buildInfoBanner(String text, Color color) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Material(
+        color: color.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Text(
+            text,
+            style: const TextStyle(fontSize: 15),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      ),
     );
   }
 
