@@ -50,14 +50,14 @@ class ConnectionPanel extends StatelessWidget {
                 style: const TextStyle(color: Colors.white70),
               ),
             ],
-            if (bypassAppsCount > 0) ...[
-              const SizedBox(height: 6),
-              Text(
-                'В обход VPN: $bypassAppsCount приложений',
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 12, color: Colors.white54),
-              ),
-            ],
+            const SizedBox(height: 6),
+            Text(
+              bypassAppsCount > 0
+                  ? 'Зоны .ru / .рф и $bypassAppsCount прилож. — напрямую'
+                  : 'Зоны .ru и .рф — напрямую',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: Colors.white54),
+            ),
             const SizedBox(height: 16),
             Row(
               children: [

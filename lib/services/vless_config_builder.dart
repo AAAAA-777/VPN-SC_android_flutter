@@ -42,7 +42,33 @@ class VlessConfigBuilder {
       'pass': '',
       'socksPort': tunSocksPort,
     };
+    _applyDirectZoneRouting(config);
     return jsonEncode(config);
+  }
+
+  /// Трафик к зонам .ru / .рф и geosite:ru — в outbound [direct] (минуя прокси).
+  static void _applyDirectZoneRouting(Map<String, dynamic> config) {
+    final routing =
+        (config['routing'] as Map<String, dynamic>?) ?? <String, dynamic>{};
+    routing['domainStrategy'] = 'IPIfNonMatch';
+
+    final rules =
+        (routing['rules'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ??
+            <Map<String, dynamic>>[];
+
+    rules.insert(0, {
+      'type': 'field',
+      'domain': [
+        'geosite:ru',
+        r'regexp:.*\.ru$',
+        r'regexp:.*\.xn--p1ai$',
+        r'regexp:.*\.рф$',
+      ],
+      'outboundTag': 'direct',
+    });
+
+    routing['rules'] = rules;
+    config['routing'] = routing;
   }
 
   static Map<String, dynamic> _publicSocksInbound(LocalProxyCredentials creds) =>
