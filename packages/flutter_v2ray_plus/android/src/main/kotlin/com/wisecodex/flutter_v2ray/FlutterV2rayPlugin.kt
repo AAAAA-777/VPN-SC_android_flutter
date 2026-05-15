@@ -130,7 +130,7 @@ class FlutterV2rayPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Activity
         V2RAY_FULL_JSON_CONFIG = call.argument("config") ?: ""
         runCatching {
             val json = org.json.JSONObject(V2RAY_FULL_JSON_CONFIG)
-            val meta = json.optJSONObject("vpnScLocalProxy")
+            val meta = json.optJSONObject("vpnscLocalProxy")
             if (meta != null) {
                 LOCAL_SOCKS5_USER = meta.optString("user", "")
                 LOCAL_SOCKS5_PASS = meta.optString("pass", "")

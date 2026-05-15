@@ -4,10 +4,11 @@ import 'package:flutter_v2ray_plus/flutter_v2ray.dart';
 
 import 'local_proxy_auth.dart';
 
-/// Защищённый локальный прокси + отдельный SOCKS для VPN-туннеля.
+/// Два локальных SOCKS с одной парой учётных данных.
 ///
-/// [publicSocksPort] — с паролем (детект VPN сторонними приложениями).
-/// [tunSocksPort] — без пароля (только tun2socks).
+/// [publicSocksPort] — для внешних проверок (отдельный порт).
+/// [tunSocksPort] — только tun2socks; с паролем, иначе сторонние приложения
+/// на 127.0.0.1:10815 обходят детект (VPN Dead и аналоги).
 class VlessConfigBuilder {
   static const publicSocksPort = 10807;
   static const httpPort = 10808;
@@ -33,13 +34,13 @@ class VlessConfigBuilder {
     });
 
     inbounds.insert(0, _publicSocksInbound(creds));
-    inbounds.insert(1, _tunSocksInbound());
+    inbounds.insert(1, _tunSocksInbound(creds));
     inbounds.add(_httpInbound(creds));
 
     config['inbounds'] = inbounds;
-    config['vpnScLocalProxy'] = {
-      'user': '',
-      'pass': '',
+    config['vpnscLocalProxy'] = {
+      'user': creds.user,
+      'pass': creds.pass,
       'socksPort': tunSocksPort,
     };
     _applyDirectZoneRouting(config);
@@ -89,13 +90,17 @@ class VlessConfigBuilder {
         'sniffing': {'enabled': false},
       };
 
-  static Map<String, dynamic> _tunSocksInbound() => {
+  static Map<String, dynamic> _tunSocksInbound(LocalProxyCredentials creds) =>
+      {
         'tag': 'tun_internal',
         'port': tunSocksPort,
         'protocol': 'socks',
         'listen': '127.0.0.1',
         'settings': {
-          'auth': 'noauth',
+          'auth': 'password',
+          'accounts': [
+            {'user': creds.user, 'pass': creds.pass},
+          ],
           'udp': true,
           'userLevel': 8,
         },

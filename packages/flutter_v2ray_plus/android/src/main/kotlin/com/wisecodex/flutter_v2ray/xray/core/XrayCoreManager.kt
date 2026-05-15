@@ -129,7 +129,7 @@ object XrayCoreManager {
         val configJson = JSONObject(config.V2RAY_FULL_JSON_CONFIG)
 
         applyVpnScLocalProxyMetadata(configJson, config)
-        configJson.remove("vpnScLocalProxy")
+        configJson.remove("vpnscLocalProxy")
 
         injectApiConfiguration(configJson)
         injectStatsConfiguration(configJson)
@@ -171,7 +171,7 @@ object XrayCoreManager {
     }
 
     private fun applyVpnScLocalProxyMetadata(configJson: JSONObject, xrayConfig: XrayConfig) {
-        val meta = configJson.optJSONObject("vpnScLocalProxy") ?: return
+        val meta = configJson.optJSONObject("vpnscLocalProxy") ?: return
         xrayConfig.LOCAL_SOCKS5_USER = meta.optString("user", "")
         xrayConfig.LOCAL_SOCKS5_PASS = meta.optString("pass", "")
         val socksPort = meta.optInt("socksPort", 0)
@@ -700,10 +700,16 @@ object XrayCoreManager {
      * Measures delay for the currently connected server.
      */
     fun getConnectedV2rayServerDelay(context: Context, url: String): Long {
-        val port = AppConfigs.V2RAY_CONFIG?.LOCAL_SOCKS5_PORT ?: DEFAULT_SOCKS_PORT
+        val config = AppConfigs.V2RAY_CONFIG
+        val port = config?.LOCAL_SOCKS5_PORT ?: DEFAULT_SOCKS_PORT
         Log.d(TAG, "Measuring delay to $url via SOCKS port $port")
 
-        return measureDelay(url, port)
+        return measureDelay(
+            url,
+            port,
+            config?.LOCAL_SOCKS5_USER,
+            config?.LOCAL_SOCKS5_PASS,
+        )
     }
 
     /**
@@ -731,27 +737,57 @@ object XrayCoreManager {
         }.getOrDefault(-1L)
     }
 
-    private fun measureDelay(url: String, socksPort: Int): Long {
+    private fun measureDelay(
+        url: String,
+        socksPort: Int,
+        socksUser: String? = null,
+        socksPass: String? = null,
+    ): Long {
         return runCatching {
-            val startTime = System.currentTimeMillis()
-            val proxy = java.net.Proxy(java.net.Proxy.Type.SOCKS, java.net.InetSocketAddress(LOCALHOST, socksPort))
-            
-            val connection = java.net.URL(url).openConnection(proxy) as java.net.HttpURLConnection
-            connection.connectTimeout = CONNECTION_TIMEOUT_MS
-            connection.readTimeout = READ_TIMEOUT_MS
-            connection.requestMethod = "HEAD"
-            
+            val useAuth = !socksUser.isNullOrEmpty() && !socksPass.isNullOrEmpty()
+            val previousUser = System.getProperty(SOCKS_USER_PROPERTY)
+            val previousPass = System.getProperty(SOCKS_PASS_PROPERTY)
+
+            if (useAuth) {
+                System.setProperty(SOCKS_USER_PROPERTY, socksUser)
+                System.setProperty(SOCKS_PASS_PROPERTY, socksPass)
+            }
+
             try {
-                val responseCode = connection.responseCode
-                val delay = System.currentTimeMillis() - startTime
-                Log.d(TAG, "Delay measurement successful: ${delay}ms (response code: $responseCode)")
-                delay
+                val startTime = System.currentTimeMillis()
+                val proxy = java.net.Proxy(
+                    java.net.Proxy.Type.SOCKS,
+                    java.net.InetSocketAddress(LOCALHOST, socksPort),
+                )
+
+                val connection = java.net.URL(url).openConnection(proxy) as java.net.HttpURLConnection
+                connection.connectTimeout = CONNECTION_TIMEOUT_MS
+                connection.readTimeout = READ_TIMEOUT_MS
+                connection.requestMethod = "HEAD"
+
+                try {
+                    val responseCode = connection.responseCode
+                    val delay = System.currentTimeMillis() - startTime
+                    Log.d(TAG, "Delay measurement successful: ${delay}ms (response code: $responseCode)")
+                    delay
+                } finally {
+                    connection.disconnect()
+                }
             } finally {
-                connection.disconnect()
+                restoreSocksProperty(SOCKS_USER_PROPERTY, previousUser)
+                restoreSocksProperty(SOCKS_PASS_PROPERTY, previousPass)
             }
         }.onFailure {
             Log.e(TAG, "Failed to measure delay", it)
         }.getOrDefault(-1L)
+    }
+
+    private fun restoreSocksProperty(key: String, previous: String?) {
+        if (previous != null) {
+            System.setProperty(key, previous)
+        } else {
+            System.clearProperty(key)
+        }
     }
 
     private fun findFreePort(): Int {
@@ -842,6 +878,8 @@ object XrayCoreManager {
     
     // Network
     private const val LOCALHOST = "127.0.0.1"
+    private const val SOCKS_USER_PROPERTY = "java.net.socks.username"
+    private const val SOCKS_PASS_PROPERTY = "java.net.socks.password"
     private const val DEFAULT_API_PORT = 10809
     private const val DEFAULT_SOCKS_PORT = 10807
     private const val DEFAULT_TEMP_PORT = 10806
