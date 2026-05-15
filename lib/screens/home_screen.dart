@@ -63,6 +63,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _bannerMessage = null;
     });
     final result = await _subscription.fetchServers();
+    await widget.vpn.refreshBypassApps(forceRefresh: true);
     if (!mounted) return;
 
     ServerNode? selected = _selected;
@@ -190,6 +191,7 @@ class _HomeScreenState extends State<HomeScreen> {
               status: status,
               coreVersion: widget.vpn.coreVersion,
               selectedRemark: _selected?.remark,
+              bypassAppsCount: widget.vpn.bypassApps.length,
               onConnect: _connect,
               onDisconnect: _disconnect,
               busy: _connectBusy,

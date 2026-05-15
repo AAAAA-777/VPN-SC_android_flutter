@@ -6,6 +6,7 @@ import 'package:vpn_permission/vpn_permission.dart';
 
 import '../constants/app_constants.dart';
 import '../models/server_node.dart';
+import 'direct_apps_service.dart';
 import 'vless_config_builder.dart';
 
 class VpnController {
@@ -17,6 +18,7 @@ class VpnController {
   StreamSubscription<VlessStatus>? _statusSub;
   bool _initialized = false;
   String? coreVersion;
+  List<String> _bypassApps = [];
 
   FlutterV2ray get v2ray => _v2ray;
 
@@ -34,6 +36,15 @@ class VpnController {
       status.value = s;
     });
     _initialized = true;
+    await refreshBypassApps();
+  }
+
+  List<String> get bypassApps => List.unmodifiable(_bypassApps);
+
+  Future<void> refreshBypassApps({bool forceRefresh = false}) async {
+    _bypassApps = await DirectAppsService.instance.load(
+      forceRefresh: forceRefresh,
+    );
   }
 
   bool get isConnected =>
@@ -75,9 +86,13 @@ class VpnController {
       throw StateError('Разрешение VPN не предоставлено');
     }
     final config = await _securedConfig(server);
+    if (_bypassApps.isEmpty) {
+      await refreshBypassApps();
+    }
     await _v2ray.startVless(
       remark: server.remark,
       config: config,
+      blockedApps: _bypassApps,
       bypassSubnets: const ['0.0.0.0/0'],
       proxyOnly: false,
       notificationDisconnectButtonName: 'Отключить',

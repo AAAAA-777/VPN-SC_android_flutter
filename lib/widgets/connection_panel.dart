@@ -12,6 +12,7 @@ class ConnectionPanel extends StatelessWidget {
     required this.onConnect,
     required this.onDisconnect,
     required this.busy,
+    this.bypassAppsCount = 0,
   });
 
   final VlessStatus status;
@@ -20,6 +21,7 @@ class ConnectionPanel extends StatelessWidget {
   final VoidCallback onConnect;
   final VoidCallback onDisconnect;
   final bool busy;
+  final int bypassAppsCount;
 
   bool get _connected => status.state.toUpperCase() == 'CONNECTED';
 
@@ -46,6 +48,14 @@ class ConnectionPanel extends StatelessWidget {
                 selectedRemark!,
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.white70),
+              ),
+            ],
+            if (bypassAppsCount > 0) ...[
+              const SizedBox(height: 6),
+              Text(
+                'В обход VPN: $bypassAppsCount приложений',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 12, color: Colors.white54),
               ),
             ],
             const SizedBox(height: 16),
