@@ -70,7 +70,9 @@ class VpnController {
     }
     // На TV только VpnService.prepare через v2ray — без второго диалога vpn_permission.
     if (AppEnvironment.current.isTv) {
-      return _v2ray.requestPermission();
+      final granted = await _v2ray.requestPermission();
+      if (!granted) return false;
+      return VpnPermission.checkPermission();
     }
     final granted = await VpnPermission.requestPermission(
       providerBundleIdentifier: AppEnvironment.current.providerBundleIdentifier,
@@ -117,6 +119,91 @@ class VpnController {
       proxyOnly: false,
       notificationDisconnectButtonName: 'Отключить',
     );
+
+    if (AppEnvironment.current.isTv) {
+      await _waitForTvConnection();
+    }
+  }
+
+  /// TV: [startVless] возвращается сразу; ждём реальный статус CONNECTED.
+  Future<void> _waitForTvConnection({
+    Duration timeout = const Duration(seconds: 45),
+  }) async {
+    if (isConnected) return;
+
+    final completer = Completer<void>();
+    Timer? timer;
+    Timer? earlyTimer;
+    var sawConnecting = false;
+    var listenerAttached = false;
+
+    late void Function() onStatus;
+
+    void cleanup() {
+      timer?.cancel();
+      earlyTimer?.cancel();
+      if (listenerAttached) {
+        status.removeListener(onStatus);
+        listenerAttached = false;
+      }
+    }
+
+    void finishError(Object error) {
+      if (completer.isCompleted) return;
+      cleanup();
+      completer.completeError(error);
+    }
+
+    void finishOk() {
+      if (completer.isCompleted) return;
+      cleanup();
+      completer.complete();
+    }
+
+    onStatus = () {
+      final st = status.value.state.toUpperCase();
+      if (st == 'CONNECTING') sawConnecting = true;
+      if (st == 'CONNECTED') finishOk();
+      if (st == 'DISCONNECTED' && sawConnecting) {
+        finishError(
+          StateError(
+            'VPN не подключился. Отключите другой VPN на приставке '
+            'и подтвердите разрешение для VPN-SC TV.',
+          ),
+        );
+      }
+    };
+
+    status.addListener(onStatus);
+    listenerAttached = true;
+    onStatus();
+
+    earlyTimer = Timer(const Duration(seconds: 4), () {
+      if (!completer.isCompleted && !isConnected && !sawConnecting) {
+        finishError(
+          StateError(
+            'VPN не запустился. Разрешите VPN для VPN-SC TV '
+            'и отключите другой VPN.',
+          ),
+        );
+      }
+    });
+
+    timer = Timer(timeout, () {
+      finishError(
+        StateError(
+          'Таймаут подключения (${timeout.inSeconds} с). '
+          'Проверьте интернет и разрешение VPN.',
+        ),
+      );
+    });
+
+    if (isConnected) {
+      cleanup();
+      return;
+    }
+
+    await completer.future;
   }
 
   Future<void> disconnect() => _v2ray.stopVless();

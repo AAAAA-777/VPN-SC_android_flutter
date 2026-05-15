@@ -120,7 +120,7 @@ class _HomeScreenTvState extends State<HomeScreenTv> {
     try {
       await _vpn!.connect(server);
       if (!mounted) return;
-      setState(() => _statusMessage = null);
+      setState(() => _statusMessage = 'Подключено');
       _connectFocus.requestFocus();
     } catch (e) {
       if (!mounted) return;
@@ -190,7 +190,15 @@ class _HomeScreenTvState extends State<HomeScreenTv> {
           ),
         ),
         if (_bannerMessage != null) _buildInfoBanner(_bannerMessage!, Colors.orange.shade900),
-        if (_statusMessage != null) _buildInfoBanner(_statusMessage!, Colors.red.shade900),
+        if (_statusMessage != null)
+          _buildInfoBanner(
+            _statusMessage!,
+            _statusMessage == 'Подключено'
+                ? Colors.green.shade900
+                : (_statusMessage!.startsWith('Подключение')
+                    ? Colors.blue.shade900
+                    : Colors.red.shade900),
+          ),
         const Padding(
           padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
           child: Text(

@@ -66,10 +66,10 @@ object XrayCoreManager {
         AppConfigs.V2RAY_STATE = AppConfigs.V2RAY_STATES.V2RAY_CONNECTING
         AppConfigs.V2RAY_CONFIG = config
 
-        return runCatching {
+        val started = runCatching {
             val configFile = prepareConfigurationFile(context, config)
-            val xrayExecutable = findXrayExecutable(context) ?: return false
-            
+            val xrayExecutable = findXrayExecutable(context) ?: return@runCatching false
+
             Utilities.copyAssets(context)
             startXrayProcess(context, configFile, xrayExecutable, config)
             Log.d(TAG, "Xray Core process started successfully")
@@ -77,6 +77,12 @@ object XrayCoreManager {
         }.onFailure {
             Log.e(TAG, "Failed to start Xray Core", it)
         }.getOrDefault(false)
+
+        if (!started) {
+            AppConfigs.V2RAY_STATE = AppConfigs.V2RAY_STATES.V2RAY_DISCONNECTED
+            sendDisconnectedBroadcast(context)
+        }
+        return started
     }
 
     /**
