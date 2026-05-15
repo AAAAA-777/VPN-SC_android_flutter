@@ -3,20 +3,19 @@ import 'package:flutter/services.dart';
 
 import 'app.dart';
 import 'core/app_environment.dart';
-import 'screens/home_screen.dart';
+import 'screens/home_screen_tv.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  AppEnvironment.configureMobile();
+  AppEnvironment.configureTv();
   SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
     DeviceOrientation.landscapeLeft,
     DeviceOrientation.landscapeRight,
   ]);
   runApp(
     const VpnScApp(
-      home: HomeScreen(),
+      title: 'VPN-SC TV',
+      home: HomeScreenTv(),
     ),
   );
 }

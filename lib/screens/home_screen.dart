@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../app.dart';
 import '../models/server_node.dart';
 import '../services/subscription_service.dart';
 import '../services/vpn_controller.dart';
@@ -9,15 +10,16 @@ import '../widgets/connection_panel.dart';
 import '../widgets/server_tile.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.vpn});
-
-  final VpnController vpn;
+  const HomeScreen({super.key});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  VpnController? _vpn;
+  bool _initialized = false;
+
   final SubscriptionService _subscription = SubscriptionService();
   final Map<String, int?> _pings = {};
   final Set<String> _measuringPing = {};
@@ -31,13 +33,17 @@ class _HomeScreenState extends State<HomeScreen> {
   static const _selectedKey = 'selected_server_id';
 
   @override
-  void initState() {
-    super.initState();
-    _init();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _vpn ??= VpnHomeHost.of(context);
+    if (!_initialized) {
+      _initialized = true;
+      _init();
+    }
   }
 
   Future<void> _init() async {
-    await widget.vpn.initialize();
+    await _vpn!.initialize();
     await _refreshServers();
     await _restoreSelectedFromPrefs();
   }
@@ -63,7 +69,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _bannerMessage = null;
     });
     final result = await _subscription.fetchServers();
-    await widget.vpn.refreshBypassApps(forceRefresh: true);
+    await _vpn!.refreshBypassApps(forceRefresh: true);
     if (!mounted) return;
 
     ServerNode? selected = _selected;
@@ -103,7 +109,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _pingServer(ServerNode server) async {
     setState(() => _measuringPing.add(server.id));
     try {
-      final ms = await widget.vpn.measureDelay(server);
+      final ms = await _vpn!.measureDelay(server);
       if (mounted) setState(() => _pings[server.id] = ms);
     } catch (e) {
       if (mounted) {
@@ -126,7 +132,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     setState(() => _connectBusy = true);
     try {
-      await widget.vpn.connect(server);
+      await _vpn!.connect(server);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -141,7 +147,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _disconnect() async {
     setState(() => _connectBusy = true);
     try {
-      await widget.vpn.disconnect();
+      await _vpn!.disconnect();
     } finally {
       if (mounted) setState(() => _connectBusy = false);
     }
@@ -185,13 +191,13 @@ class _HomeScreenState extends State<HomeScreen> {
         _buildAppBar(),
         if (_bannerMessage != null) _buildBanner(),
         ValueListenableBuilder(
-          valueListenable: widget.vpn.status,
+          valueListenable: _vpn!.status,
           builder: (context, status, _) {
             return ConnectionPanel(
               status: status,
-              coreVersion: widget.vpn.coreVersion,
+              coreVersion: _vpn!.coreVersion,
               selectedRemark: _selected?.remark,
-              bypassAppsCount: widget.vpn.bypassApps.length,
+              bypassAppsCount: _vpn!.bypassApps.length,
               onConnect: _connect,
               onDisconnect: _disconnect,
               busy: _connectBusy,

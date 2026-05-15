@@ -18,8 +18,22 @@ android {
         jvmTarget = JavaVersion.VERSION_11.toString()
     }
 
+    flavorDimensions += "platform"
+
+    productFlavors {
+        create("mobile") {
+            dimension = "platform"
+            applicationId = "com.vpnsc.client"
+            resValue("string", "app_name", "VPN-SC")
+        }
+        create("tv") {
+            dimension = "platform"
+            applicationId = "com.vpnsc.client.tv"
+            resValue("string", "app_name", "VPN-SC TV")
+        }
+    }
+
     defaultConfig {
-        applicationId = "com.vpnsc.client"
         minSdk = flutter.minSdkVersion
         targetSdk = 35
         versionCode = flutter.versionCode

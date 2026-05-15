@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_v2ray_plus/flutter_v2ray.dart';
 import 'package:vpn_permission/vpn_permission.dart';
 
-import '../constants/app_constants.dart';
+import '../core/app_environment.dart';
 import '../models/server_node.dart';
 import 'direct_apps_service.dart';
 import 'vless_config_builder.dart';
@@ -27,8 +27,8 @@ class VpnController {
     await _v2ray.initializeVless(
       notificationIconResourceType: 'mipmap',
       notificationIconResourceName: 'ic_launcher',
-      providerBundleIdentifier: AppConstants.providerBundleIdentifier,
-      groupIdentifier: AppConstants.groupIdentifier,
+      providerBundleIdentifier: AppEnvironment.current.providerBundleIdentifier,
+      groupIdentifier: AppEnvironment.current.groupIdentifier,
     );
     coreVersion = await _v2ray.getCoreVersion();
     _statusSub?.cancel();
@@ -36,15 +36,28 @@ class VpnController {
       status.value = s;
     });
     _initialized = true;
-    await refreshBypassApps();
+    if (!AppEnvironment.current.isTv) {
+      await refreshBypassApps();
+    }
   }
 
   List<String> get bypassApps => List.unmodifiable(_bypassApps);
 
   Future<void> refreshBypassApps({bool forceRefresh = false}) async {
+    if (AppEnvironment.current.isTv) {
+      _bypassApps = const [];
+      return;
+    }
     _bypassApps = await DirectAppsService.instance.load(
       forceRefresh: forceRefresh,
     );
+  }
+
+  Future<List<String>> _resolveBypassApps() async {
+    if (_bypassApps.isEmpty) {
+      await refreshBypassApps();
+    }
+    return _bypassApps;
   }
 
   bool get isConnected =>
@@ -56,9 +69,9 @@ class VpnController {
       return true;
     }
     final granted = await VpnPermission.requestPermission(
-      providerBundleIdentifier: AppConstants.providerBundleIdentifier,
-      groupIdentifier: AppConstants.groupIdentifier,
-      localizedDescription: AppConstants.localizedDescription,
+      providerBundleIdentifier: AppEnvironment.current.providerBundleIdentifier,
+      groupIdentifier: AppEnvironment.current.groupIdentifier,
+      localizedDescription: AppEnvironment.current.localizedDescription,
     );
     if (granted) {
       return true;
@@ -90,13 +103,13 @@ class VpnController {
       await Future<void>.delayed(const Duration(milliseconds: 400));
     }
     final config = await _securedConfig(server);
-    if (_bypassApps.isEmpty) {
-      await refreshBypassApps();
-    }
+    final bypassApps = AppEnvironment.current.isTv
+        ? const <String>[]
+        : await _resolveBypassApps();
     await _v2ray.startVless(
       remark: server.remark,
       config: config,
-      blockedApps: _bypassApps,
+      blockedApps: bypassApps,
       bypassSubnets: const ['0.0.0.0/0'],
       proxyOnly: false,
       notificationDisconnectButtonName: 'Отключить',

@@ -1,6 +1,6 @@
 import '../core/app_environment.dart';
 
-/// Мобильные константы (см. [AppEnvironment.configureMobile]).
+/// TV-константы (см. [AppEnvironment.configureTv]).
 class AppConstants {
   static String get packageName => AppEnvironment.current.packageName;
   static String get providerBundleIdentifier =>
