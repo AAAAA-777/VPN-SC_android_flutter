@@ -65,6 +65,7 @@ object XrayCoreManager {
         // Set state to CONNECTING immediately - this is critical for VPN activation
         AppConfigs.V2RAY_STATE = AppConfigs.V2RAY_STATES.V2RAY_CONNECTING
         AppConfigs.V2RAY_CONFIG = config
+        sendStatusBroadcast(context, AppConfigs.V2RAY_STATES.V2RAY_CONNECTING)
 
         val started = runCatching {
             val configFile = prepareConfigurationFile(context, config)
@@ -98,7 +99,9 @@ object XrayCoreManager {
         
         val config = AppConfigs.V2RAY_CONFIG
         if (config != null) {
-            showNotification(context, config)
+            runCatching { showNotification(context, config) }
+                .onFailure { Log.e(TAG, "Failed to show VPN notification (VPN stays up)", it) }
+            broadcastConnectionStatus(context)
             startTimer(context)
         } else {
             Log.e(TAG, "Config is null in onVpnEstablished")
@@ -548,21 +551,22 @@ object XrayCoreManager {
     private fun showExpiryNotification(context: Context, config: XrayConfig) {
         val channelId = createNotificationChannel(context, config.APPLICATION_NAME)
         
-        val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
-        launchIntent?.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        val launchIntent = resolveLauncherIntent(context)?.apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
         
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         } else {
             PendingIntent.FLAG_UPDATE_CURRENT
         }
-        val contentPendingIntent = PendingIntent.getActivity(context, 1, launchIntent, flags)
+        val contentPendingIntent = pendingIntentForActivity(context, 1, launchIntent, flags)
         
         val notification = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(config.APPLICATION_ICON)
             .setContentTitle(config.APPLICATION_NAME)
             .setContentText(config.AUTO_DISCONNECT_EXPIRED_MESSAGE)
-            .setContentIntent(contentPendingIntent)
+            .apply { contentPendingIntent?.let { setContentIntent(it) } }
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .build()
@@ -581,22 +585,22 @@ object XrayCoreManager {
         val channelId = createNotificationChannel(context, config.APPLICATION_NAME)
         val timeText = formatRemainingTime(remainingAutoDisconnectSeconds, config.AUTO_DISCONNECT_TIME_FORMAT)
         
-        val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
-        launchIntent?.action = "FROM_DISCONNECT_BTN"
-        launchIntent?.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
+        val launchIntent = resolveLauncherIntent(context, "FROM_DISCONNECT_BTN")?.apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
+        }
         
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         } else {
             PendingIntent.FLAG_UPDATE_CURRENT
         }
-        val contentPendingIntent = PendingIntent.getActivity(context, 0, launchIntent, flags)
+        val contentPendingIntent = pendingIntentForActivity(context, 0, launchIntent, flags)
         
         val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(config.APPLICATION_ICON)
             .setContentTitle(config.REMARK)
             .setContentText("Connected • $timeText remaining")
-            .setContentIntent(contentPendingIntent)
+            .apply { contentPendingIntent?.let { setContentIntent(it) } }
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -640,15 +644,56 @@ object XrayCoreManager {
 
     // MARK: - Broadcast Helpers
 
-    private fun sendDisconnectedBroadcast(context: Context) {
+    /**
+     * Resolves a launcher activity. TV apps often only declare LEANBACK_LAUNCHER,
+     * so [PackageManager.getLaunchIntentForPackage] returns null.
+     */
+    private fun resolveLauncherIntent(context: Context, action: String? = null): Intent? {
+        var intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+        if (intent == null) {
+            val query = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
+                setPackage(context.packageName)
+            }
+            val activities = context.packageManager.queryIntentActivities(
+                query,
+                PackageManager.MATCH_DEFAULT_ONLY,
+            )
+            if (activities.isNotEmpty()) {
+                val info = activities[0].activityInfo
+                intent = Intent(Intent.ACTION_MAIN).apply {
+                    setClassName(info.packageName, info.name)
+                    addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+            }
+        }
+        if (intent != null && action != null) {
+            intent.action = action
+        }
+        return intent
+    }
+
+    private fun pendingIntentForActivity(
+        context: Context,
+        requestCode: Int,
+        intent: Intent?,
+        flags: Int,
+    ): PendingIntent? = intent?.let { PendingIntent.getActivity(context, requestCode, it, flags) }
+
+    private fun sendStatusBroadcast(context: Context, state: AppConfigs.V2RAY_STATES) {
         Intent(AppConfigs.V2RAY_CONNECTION_INFO).apply {
-            putExtra("STATE", AppConfigs.V2RAY_STATES.V2RAY_DISCONNECTED)
+            putExtra("STATE", state)
             putExtra("DURATION", "0")
             putExtra("UPLOAD_SPEED", 0L)
             putExtra("DOWNLOAD_SPEED", 0L)
             putExtra("UPLOAD_TRAFFIC", 0L)
             putExtra("DOWNLOAD_TRAFFIC", 0L)
         }.also { context.sendBroadcast(it) }
+    }
+
+    private fun sendDisconnectedBroadcast(context: Context) {
+        sendStatusBroadcast(context, AppConfigs.V2RAY_STATES.V2RAY_DISCONNECTED)
     }
 
     private fun showNotification(context: Service, config: XrayConfig) {
@@ -663,22 +708,22 @@ object XrayCoreManager {
 
         val channelId = createNotificationChannel(context, config.APPLICATION_NAME)
         
-        val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
-        launchIntent?.action = "FROM_DISCONNECT_BTN"
-        launchIntent?.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
+        val launchIntent = resolveLauncherIntent(context, "FROM_DISCONNECT_BTN")?.apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
+        }
         
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         } else {
             PendingIntent.FLAG_UPDATE_CURRENT
         }
-        val contentPendingIntent = PendingIntent.getActivity(context, 0, launchIntent, flags)
+        val contentPendingIntent = pendingIntentForActivity(context, 0, launchIntent, flags)
 
         val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(config.APPLICATION_ICON)
             .setContentTitle(config.REMARK)
             .setContentText("Connected")
-            .setContentIntent(contentPendingIntent)
+            .apply { contentPendingIntent?.let { setContentIntent(it) } }
             .setPriority(NotificationCompat.PRIORITY_LOW)  // Changed from PRIORITY_MIN
             .setOngoing(true)
             .setShowWhen(true)

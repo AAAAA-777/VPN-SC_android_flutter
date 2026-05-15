@@ -33,6 +33,7 @@ class XrayVPNService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
     private var tun2socksProcess: Process? = null
     private var isRunning = false
+    private var vpnEstablishedNotified = false
 
     // MARK: - Lifecycle Methods
 
@@ -174,12 +175,8 @@ class XrayVPNService : VpnService() {
             // Mark local service state as running
             isRunning = true
             
-            // Start tun2socks to route traffic
+            // Start tun2socks; onVpnEstablished runs after TUN FD is handed to tun2socks
             runTun2socks(config)
-            
-            // CRITICAL: Only NOW tell XrayCoreManager that VPN is fully ready
-            // This sets CONNECTED state, shows notification, and starts timer
-            XrayCoreManager.onVpnEstablished(this)
             
         } catch (e: Exception) {
             Log.e(TAG, "Exception during VPN setup", e)
@@ -378,10 +375,17 @@ class XrayVPNService : VpnService() {
                     }
                     
                     Log.d(TAG, "Successfully transferred TUN FD to tun2socks")
+                    if (!vpnEstablishedNotified) {
+                        vpnEstablishedNotified = true
+                        XrayCoreManager.onVpnEstablished(this@XrayVPNService)
+                    }
                     return@Thread
                 }.onFailure {
                     if (attempt == FD_TRANSFER_MAX_RETRIES - 1) {
                         Log.e(TAG, "Failed to send FD after $FD_TRANSFER_MAX_RETRIES attempts", it)
+                        handleVpnEstablishmentFailure(
+                            "Failed to transfer TUN interface to tun2socks",
+                        )
                     }
                 }
             }
@@ -421,6 +425,7 @@ class XrayVPNService : VpnService() {
             Log.e(TAG, "Error during cleanup", e)
         } finally {
             isRunning = false
+            vpnEstablishedNotified = false
         }
     }
 
@@ -547,8 +552,8 @@ class XrayVPNService : VpnService() {
         private const val TUN2SOCKS_LOG_LEVEL = "debug"
         
         // File Descriptor Transfer
-        private const val FD_TRANSFER_MAX_RETRIES = 10
-        private const val FD_TRANSFER_RETRY_DELAY_MS = 500L
+        private const val FD_TRANSFER_MAX_RETRIES = 25
+        private const val FD_TRANSFER_RETRY_DELAY_MS = 400L
         private const val FD_TRANSFER_MAGIC_BYTE = 32
         
         // Timing

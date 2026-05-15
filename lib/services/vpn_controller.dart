@@ -5,6 +5,7 @@ import 'package:flutter_v2ray_plus/flutter_v2ray.dart';
 import 'package:vpn_permission/vpn_permission.dart';
 
 import '../core/app_environment.dart';
+import '../core/vpn_connection_exception.dart';
 import '../models/server_node.dart';
 import 'direct_apps_service.dart';
 import 'vless_config_builder.dart';
@@ -99,13 +100,13 @@ class VpnController {
   Future<void> connect(ServerNode server) async {
     final allowed = await requestPermission();
     if (!allowed) {
-      throw StateError('Разрешение VPN не предоставлено');
+      throw VpnConnectionException('Разрешение VPN не предоставлено');
     }
     // Сброс зависшего VPN после неудачного подключения.
     final state = status.value.state.toUpperCase();
     if (state == 'CONNECTED' || state == 'CONNECTING') {
       await disconnect();
-      await Future<void>.delayed(const Duration(milliseconds: 400));
+      await Future<void>.delayed(const Duration(milliseconds: 600));
     }
     final config = await _securedConfig(server);
     final bypassApps = AppEnvironment.current.isTv
@@ -131,79 +132,49 @@ class VpnController {
   }) async {
     if (isConnected) return;
 
-    final completer = Completer<void>();
-    Timer? timer;
-    Timer? earlyTimer;
-    var sawConnecting = false;
-    var listenerAttached = false;
+    final startedAt = DateTime.now();
+    final deadline = startedAt.add(timeout);
+    var sawConnecting = status.value.state.toUpperCase() == 'CONNECTING';
 
-    late void Function() onStatus;
-
-    void cleanup() {
-      timer?.cancel();
-      earlyTimer?.cancel();
-      if (listenerAttached) {
-        status.removeListener(onStatus);
-        listenerAttached = false;
-      }
-    }
-
-    void finishError(Object error) {
-      if (completer.isCompleted) return;
-      cleanup();
-      completer.completeError(error);
-    }
-
-    void finishOk() {
-      if (completer.isCompleted) return;
-      cleanup();
-      completer.complete();
-    }
-
-    onStatus = () {
-      final st = status.value.state.toUpperCase();
-      if (st == 'CONNECTING') sawConnecting = true;
-      if (st == 'CONNECTED') finishOk();
-      if (st == 'DISCONNECTED' && sawConnecting) {
-        finishError(
-          StateError(
-            'VPN не подключился. Отключите другой VPN на приставке '
-            'и подтвердите разрешение для VPN-SC TV.',
-          ),
-        );
-      }
-    };
-
-    status.addListener(onStatus);
-    listenerAttached = true;
-    onStatus();
-
-    earlyTimer = Timer(const Duration(seconds: 4), () {
-      if (!completer.isCompleted && !isConnected && !sawConnecting) {
-        finishError(
-          StateError(
-            'VPN не запустился. Разрешите VPN для VPN-SC TV '
-            'и отключите другой VPN.',
-          ),
-        );
-      }
+    StreamSubscription<VlessStatus>? sub;
+    sub = _v2ray.onStatusChanged.listen((s) {
+      status.value = s;
     });
 
-    timer = Timer(timeout, () {
-      finishError(
-        StateError(
-          'Таймаут подключения (${timeout.inSeconds} с). '
-          'Проверьте интернет и разрешение VPN.',
-        ),
+    const failureAfterStart = Duration(seconds: 2);
+    const tvConnectFailedMessage =
+        'VPN не подключился. На приставке: Настройки → Сеть → VPN — '
+        'отключите другой VPN. Затем в VPN-SC TV нажмите «Подключить» '
+        'и в системном окне выберите «ОК» / «Разрешить».';
+
+    try {
+      while (DateTime.now().isBefore(deadline)) {
+        final st = status.value.state.toUpperCase();
+        final elapsed = DateTime.now().difference(startedAt);
+
+        if (st == 'CONNECTING') sawConnecting = true;
+        if (st == 'CONNECTED') return;
+
+        if (st == 'DISCONNECTED' &&
+            elapsed > failureAfterStart &&
+            (sawConnecting || elapsed > const Duration(seconds: 5))) {
+          throw VpnConnectionException(tvConnectFailedMessage);
+        }
+
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+      }
+
+      throw VpnConnectionException(
+        sawConnecting
+            ? 'Таймаут подключения (${timeout.inSeconds} с). '
+                'Проверьте интернет и сервер.'
+            : 'VPN не ответил. Разрешите VPN для VPN-SC TV '
+                '(Настройки → Приложения → VPN-SC TV) '
+                'и отключите другой VPN в Настройки → Сеть → VPN.',
       );
-    });
-
-    if (isConnected) {
-      cleanup();
-      return;
+    } finally {
+      await sub.cancel();
     }
-
-    await completer.future;
   }
 
   Future<void> disconnect() => _v2ray.stopVless();

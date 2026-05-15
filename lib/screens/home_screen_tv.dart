@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app.dart';
+import '../core/vpn_connection_exception.dart';
 import '../models/server_node.dart';
 import '../services/subscription_service.dart';
 import '../services/vpn_controller.dart';
@@ -124,7 +125,7 @@ class _HomeScreenTvState extends State<HomeScreenTv> {
       _connectFocus.requestFocus();
     } catch (e) {
       if (!mounted) return;
-      setState(() => _statusMessage = '$e');
+      setState(() => _statusMessage = vpnErrorMessage(e));
       _connectFocus.requestFocus();
     } finally {
       if (mounted) setState(() => _connectBusy = false);
