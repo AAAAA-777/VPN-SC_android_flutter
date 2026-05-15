@@ -9,6 +9,8 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.VpnService
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import androidx.core.app.ActivityCompat
 import com.wisecodex.flutter_v2ray.xray.core.XrayCoreManager
 import com.wisecodex.flutter_v2ray.xray.dto.XrayConfig
@@ -51,7 +53,9 @@ class FlutterV2rayPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Activity
     private var vpnStatusSink: EventChannel.EventSink? = null
     private var activity: Activity? = null
     private var xrayReceiver: BroadcastReceiver? = null
+    private var receiverContext: Context? = null
     private var pendingResult: MethodChannel.Result? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     // MARK: - Flutter Plugin Lifecycle
 
@@ -206,19 +210,21 @@ class FlutterV2rayPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Activity
     }
 
     private fun handleStopVless(result: MethodChannel.Result) {
-        context?.let { ctx ->
-            val intent = Intent(ctx, XrayVPNService::class.java).apply {
-                putExtra("COMMAND", AppConfigs.V2RAY_SERVICE_COMMANDS.STOP_SERVICE)
-            }
-            try {
-                // Command-based stop is preferred for graceful cleanup
-                ctx.startService(intent)
-                android.util.Log.d("FlutterV2ray", "STOP_SERVICE command sent via startService")
-            } catch (e: Exception) {
-                // Fallback to stopService if background restrictions apply (Android 12+)
-                android.util.Log.w("FlutterV2ray", "Failed to startService with STOP command, falling back to stopService", e)
-                ctx.stopService(intent)
-            }
+        val intent = Intent(context, XrayVPNService::class.java).apply {
+            putExtra("COMMAND", AppConfigs.V2RAY_SERVICE_COMMANDS.STOP_SERVICE)
+        }
+        // Service runs in :RunSoLibXrayDaemon — stopService + STOP command for reliable teardown.
+        runCatching {
+            context.stopService(intent)
+            android.util.Log.d(TAG, "stopService sent for XrayVPNService")
+        }.onFailure {
+            android.util.Log.w(TAG, "stopService failed", it)
+        }
+        runCatching {
+            context.startService(intent)
+            android.util.Log.d(TAG, "STOP_SERVICE command sent via startService")
+        }.onFailure {
+            android.util.Log.w(TAG, "startService STOP failed", it)
         }
         result.success(null)
     }
@@ -340,17 +346,19 @@ class FlutterV2rayPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Activity
     // MARK: - Broadcast Receiver
 
     private fun registerReceiver() {
-        activity ?: return
-        
         if (xrayReceiver == null) {
             xrayReceiver = createBroadcastReceiver()
         }
-        
+        if (receiverContext != null) return
+
+        val ctx = (activity ?: context).applicationContext
+        receiverContext = ctx
         val filter = IntentFilter(AppConfigs.V2RAY_CONNECTION_INFO)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            activity?.registerReceiver(xrayReceiver, filter, Context.RECEIVER_EXPORTED)
+            ctx.registerReceiver(xrayReceiver, filter, Context.RECEIVER_EXPORTED)
         } else {
-            activity?.registerReceiver(xrayReceiver, filter)
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            ctx.registerReceiver(xrayReceiver, filter)
         }
     }
 
@@ -373,22 +381,20 @@ class FlutterV2rayPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Activity
                 intent.getLongExtra("UPLOAD_TRAFFIC", 0).toString(),
                 intent.getLongExtra("DOWNLOAD_TRAFFIC", 0).toString(),
                 stateName,
-                intent.getStringExtra("REMAINING_TIME") // Can be null if auto-disconnect not active
+                intent.getStringExtra("REMAINING_TIME"),
             )
 
-            vpnStatusSink?.success(data)
+            mainHandler.post { vpnStatusSink?.success(data) }
         }
     }
 
     private fun unregisterReceiver() {
-        activity?.let { currentActivity ->
+        receiverContext?.let { ctx ->
             xrayReceiver?.let { receiver ->
-                runCatching {
-                    currentActivity.unregisterReceiver(receiver)
-                }
-                xrayReceiver = null
+                runCatching { ctx.unregisterReceiver(receiver) }
             }
         }
+        receiverContext = null
     }
 
     // MARK: - Activity Lifecycle

@@ -367,18 +367,24 @@ object XrayCoreManager {
 
     private fun broadcastConnectionStatus(context: Context) {
         val traffic = getV2rayTraffic(context)
-        
-        Intent(AppConfigs.V2RAY_CONNECTION_INFO).apply {
+        sendVpnStatusBroadcast(context) {
             putExtra("STATE", AppConfigs.V2RAY_STATE)
             putExtra("DURATION", connectionDurationSeconds.toString())
             putExtra("UPLOAD_SPEED", traffic[0])
             putExtra("DOWNLOAD_SPEED", traffic[1])
             putExtra("UPLOAD_TRAFFIC", traffic[2])
             putExtra("DOWNLOAD_TRAFFIC", traffic[3])
-            // Add remaining auto-disconnect time
             if (autoDisconnectEnabled && remainingAutoDisconnectSeconds >= 0) {
                 putExtra("REMAINING_TIME", remainingAutoDisconnectSeconds.toString())
             }
+        }
+    }
+
+    /** Explicit package — required for broadcasts from :RunSoLibXrayDaemon on some TV devices. */
+    private fun sendVpnStatusBroadcast(context: Context, configure: Intent.() -> Unit) {
+        Intent(AppConfigs.V2RAY_CONNECTION_INFO).apply {
+            setPackage(context.packageName)
+            configure()
         }.also { context.sendBroadcast(it) }
     }
 
@@ -526,15 +532,14 @@ object XrayCoreManager {
             .commit() // Use commit() to ensure write to disk before service stops
         Log.d(TAG, "Auto-disconnect timestamp saved to SharedPreferences (Synced)")
         
-        // Send AUTO_DISCONNECTED state broadcast
-        Intent(AppConfigs.V2RAY_CONNECTION_INFO).apply {
+        sendVpnStatusBroadcast(context) {
             putExtra("STATE", AppConfigs.V2RAY_STATES.V2RAY_AUTO_DISCONNECTED)
             putExtra("DURATION", connectionDurationSeconds.toString())
             putExtra("UPLOAD_SPEED", 0L)
             putExtra("DOWNLOAD_SPEED", 0L)
             putExtra("UPLOAD_TRAFFIC", 0L)
             putExtra("DOWNLOAD_TRAFFIC", 0L)
-        }.also { context.sendBroadcast(it) }
+        }
         
         // Show expiry notification if configured
         if (config != null && config.AUTO_DISCONNECT_ON_EXPIRE == 1) {
@@ -682,14 +687,14 @@ object XrayCoreManager {
     ): PendingIntent? = intent?.let { PendingIntent.getActivity(context, requestCode, it, flags) }
 
     private fun sendStatusBroadcast(context: Context, state: AppConfigs.V2RAY_STATES) {
-        Intent(AppConfigs.V2RAY_CONNECTION_INFO).apply {
+        sendVpnStatusBroadcast(context) {
             putExtra("STATE", state)
-            putExtra("DURATION", "0")
+            putExtra("DURATION", connectionDurationSeconds.toString())
             putExtra("UPLOAD_SPEED", 0L)
             putExtra("DOWNLOAD_SPEED", 0L)
             putExtra("UPLOAD_TRAFFIC", 0L)
             putExtra("DOWNLOAD_TRAFFIC", 0L)
-        }.also { context.sendBroadcast(it) }
+        }
     }
 
     private fun sendDisconnectedBroadcast(context: Context) {

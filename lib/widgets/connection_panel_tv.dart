@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_v2ray_plus/model/vless_status.dart';
@@ -30,10 +32,58 @@ class _ConnectionPanelTvState extends State<ConnectionPanelTv> {
   late final FocusNode _connectFocus =
       widget.connectFocusNode ?? FocusNode(debugLabel: 'connect');
 
+  Timer? _elapsedTimer;
+  int _elapsedSeconds = 0;
+
   bool get _connected => widget.status.state.toUpperCase() == 'CONNECTED';
+
+  int get _displayDuration {
+    if (!_connected) return 0;
+    final native = widget.status.duration;
+    return native > _elapsedSeconds ? native : _elapsedSeconds;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (_connected) {
+      _elapsedSeconds = widget.status.duration;
+      _startElapsedTimer();
+    }
+  }
+
+  @override
+  void didUpdateWidget(ConnectionPanelTv oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.status.duration > _elapsedSeconds) {
+      _elapsedSeconds = widget.status.duration;
+    }
+    final wasConnected = oldWidget.status.state.toUpperCase() == 'CONNECTED';
+    if (_connected && !wasConnected) {
+      _elapsedSeconds = widget.status.duration;
+      _startElapsedTimer();
+    } else if (!_connected && wasConnected) {
+      _stopElapsedTimer();
+      _elapsedSeconds = 0;
+    }
+  }
+
+  void _startElapsedTimer() {
+    _elapsedTimer?.cancel();
+    _elapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted || !_connected) return;
+      setState(() => _elapsedSeconds++);
+    });
+  }
+
+  void _stopElapsedTimer() {
+    _elapsedTimer?.cancel();
+    _elapsedTimer = null;
+  }
 
   @override
   void dispose() {
+    _stopElapsedTimer();
     if (widget.connectFocusNode == null) {
       _connectFocus.dispose();
     }
@@ -50,10 +100,11 @@ class _ConnectionPanelTvState extends State<ConnectionPanelTv> {
   }
 
   bool _isActivateKey(KeyEvent event) {
-    if (event is! KeyDownEvent) return false;
+    if (event is! KeyDownEvent || event is KeyRepeatEvent) return false;
     final key = event.logicalKey;
     return key == LogicalKeyboardKey.select ||
         key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter ||
         key == LogicalKeyboardKey.space ||
         key == LogicalKeyboardKey.gameButtonA;
   }
@@ -111,47 +162,51 @@ class _ConnectionPanelTvState extends State<ConnectionPanelTv> {
             ),
             const SizedBox(height: 12),
             Text(
-              'Время: ${widget.status.duration} с',
+              'Время: $_displayDuration с',
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 15, color: Colors.white54),
             ),
             const SizedBox(height: 28),
-            Actions(
-              actions: <Type, Action<Intent>>{
-                ActivateIntent: CallbackAction<ActivateIntent>(
-                  onInvoke: (_) {
-                    _activatePrimaryAction();
-                    return null;
-                  },
-                ),
+            Focus(
+              focusNode: _connectFocus,
+              onKeyEvent: (node, event) {
+                if (_isActivateKey(event)) {
+                  _activatePrimaryAction();
+                  return KeyEventResult.handled;
+                }
+                return KeyEventResult.ignored;
               },
-              child: Focus(
-                focusNode: _connectFocus,
-                onKeyEvent: (node, event) {
-                  if (_isActivateKey(event)) {
-                    _activatePrimaryAction();
-                    return KeyEventResult.handled;
-                  }
-                  return KeyEventResult.ignored;
-                },
-                child: Builder(
-                  builder: (context) {
-                    final focused = Focus.of(context).hasFocus;
-                    return AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      decoration: BoxDecoration(
+              child: Builder(
+                builder: (context) {
+                  final focused = Focus.of(context).hasFocus;
+                  final label = widget.busy
+                      ? 'Подождите…'
+                      : (_connected ? 'Отключить' : 'Подключить');
+                  final bgColor = _connected
+                      ? Colors.red.shade700
+                      : AppColors.primary;
+
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: focused
+                          ? Border.all(color: AppColors.secondary, width: 3)
+                          : null,
+                    ),
+                    child: Material(
+                      color: widget.busy ? bgColor.withValues(alpha: 0.6) : bgColor,
+                      borderRadius: BorderRadius.circular(12),
+                      child: InkWell(
+                        onTap: widget.busy ? null : _activatePrimaryAction,
                         borderRadius: BorderRadius.circular(12),
-                        border: focused
-                            ? Border.all(color: AppColors.secondary, width: 3)
-                            : null,
-                      ),
-                      child: SizedBox(
-                        height: 56,
-                        child: FilledButton.icon(
-                          onPressed:
-                              widget.busy ? null : _activatePrimaryAction,
-                          icon: widget.busy
-                              ? const SizedBox(
+                        child: SizedBox(
+                          height: 56,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              if (widget.busy)
+                                const SizedBox(
                                   width: 24,
                                   height: 24,
                                   child: CircularProgressIndicator(
@@ -159,28 +214,28 @@ class _ConnectionPanelTvState extends State<ConnectionPanelTv> {
                                     color: Colors.white,
                                   ),
                                 )
-                              : Icon(
+                              else
+                                Icon(
                                   _connected ? Icons.power_off : Icons.vpn_key,
                                   size: 28,
+                                  color: Colors.white,
                                 ),
-                          label: Text(
-                            widget.busy
-                                ? 'Подождите…'
-                                : (_connected
-                                    ? 'Отключить'
-                                    : 'Подключить'),
-                            style: const TextStyle(fontSize: 20),
-                          ),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: _connected
-                                ? Colors.red.shade700
-                                : AppColors.primary,
+                              const SizedBox(width: 12),
+                              Text(
+                                label,
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
-                    );
-                  },
-                ),
+                    ),
+                  );
+                },
               ),
             ),
           ],

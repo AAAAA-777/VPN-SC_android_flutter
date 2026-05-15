@@ -133,9 +133,19 @@ class _HomeScreenTvState extends State<HomeScreenTv> {
   }
 
   Future<void> _disconnect() async {
-    setState(() => _connectBusy = true);
+    setState(() {
+      _connectBusy = true;
+      _statusMessage = 'Отключение…';
+    });
     try {
       await _vpn!.disconnect();
+      if (!mounted) return;
+      setState(() => _statusMessage = 'Отключено');
+      _connectFocus.requestFocus();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _statusMessage = vpnErrorMessage(e));
+      _connectFocus.requestFocus();
     } finally {
       if (mounted) setState(() => _connectBusy = false);
     }

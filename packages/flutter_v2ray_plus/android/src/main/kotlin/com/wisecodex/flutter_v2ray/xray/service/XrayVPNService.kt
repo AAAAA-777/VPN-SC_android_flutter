@@ -5,6 +5,8 @@ import android.net.LocalSocket
 import android.net.LocalSocketAddress
 import android.net.VpnService
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import com.wisecodex.flutter_v2ray.xray.core.XrayCoreManager
@@ -34,6 +36,7 @@ class XrayVPNService : VpnService() {
     private var tun2socksProcess: Process? = null
     private var isRunning = false
     private var vpnEstablishedNotified = false
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     // MARK: - Lifecycle Methods
 
@@ -256,6 +259,12 @@ class XrayVPNService : VpnService() {
         }
     }
 
+    private fun notifyVpnEstablished() {
+        if (vpnEstablishedNotified) return
+        vpnEstablishedNotified = true
+        XrayCoreManager.onVpnEstablished(this)
+    }
+
     private fun handleVpnEstablishmentFailure(reason: String = "Unknown") {
         Log.e(TAG, "========== VPN ESTABLISHMENT FAILED ==========")
         Log.e(TAG, "Reason: $reason")
@@ -263,9 +272,10 @@ class XrayVPNService : VpnService() {
         Log.e(TAG, "Cleaning up XrayCore and stopping service")
         Log.e(TAG, "=============================================")
 
-        // Send DISCONNECTED broadcast to update app UI
         sendBroadcast(Intent(AppConfigs.V2RAY_CONNECTION_INFO).apply {
+            setPackage(packageName)
             putExtra("STATE", AppConfigs.V2RAY_STATES.V2RAY_DISCONNECTED)
+            putExtra("DURATION", "0")
         })
 
         // Stop XrayCore since VPN failed
@@ -375,17 +385,16 @@ class XrayVPNService : VpnService() {
                     }
                     
                     Log.d(TAG, "Successfully transferred TUN FD to tun2socks")
-                    if (!vpnEstablishedNotified) {
-                        vpnEstablishedNotified = true
-                        XrayCoreManager.onVpnEstablished(this@XrayVPNService)
-                    }
+                    mainHandler.post { notifyVpnEstablished() }
                     return@Thread
                 }.onFailure {
                     if (attempt == FD_TRANSFER_MAX_RETRIES - 1) {
                         Log.e(TAG, "Failed to send FD after $FD_TRANSFER_MAX_RETRIES attempts", it)
-                        handleVpnEstablishmentFailure(
-                            "Failed to transfer TUN interface to tun2socks",
-                        )
+                        mainHandler.post {
+                            handleVpnEstablishmentFailure(
+                                "Failed to transfer TUN interface to tun2socks",
+                            )
+                        }
                     }
                 }
             }

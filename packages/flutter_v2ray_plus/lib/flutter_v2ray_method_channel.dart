@@ -120,16 +120,21 @@ class MethodChannelFlutterV2ray extends FlutterV2rayPlatform {
     return timestamp ?? 0;
   }
 
+  static int _eventInt(dynamic value) {
+    if (value is int) return value;
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
   @override
   Stream<VlessStatus> get onStatusChanged {
     return eventChannel.receiveBroadcastStream().map(
       (event) => VlessStatus(
-        duration: int.parse(event[0]),
-        uploadSpeed: int.parse(event[1]),
-        downloadSpeed: int.parse(event[2]),
-        upload: int.parse(event[3]),
-        download: int.parse(event[4]),
-        state: event[5],
+        duration: _eventInt(event[0]),
+        uploadSpeed: _eventInt(event[1]),
+        downloadSpeed: _eventInt(event[2]),
+        upload: _eventInt(event[3]),
+        download: _eventInt(event[4]),
+        state: event[5]?.toString() ?? 'DISCONNECTED',
         remainingTime: event.length > 6 && event[6] != null
             ? int.tryParse(event[6].toString())
             : null,

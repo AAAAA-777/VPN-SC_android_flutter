@@ -177,7 +177,35 @@ class VpnController {
     }
   }
 
-  Future<void> disconnect() => _v2ray.stopVless();
+  Future<void> disconnect() async {
+    await _v2ray.stopVless();
+    if (AppEnvironment.current.isTv) {
+      await _waitForTvDisconnect();
+    }
+  }
+
+  /// TV: ждём DISCONNECTED после stopVless (broadcast из VPN-процесса).
+  Future<void> _waitForTvDisconnect({
+    Duration timeout = const Duration(seconds: 15),
+  }) async {
+    if (status.value.state.toUpperCase() == 'DISCONNECTED') return;
+
+    final deadline = DateTime.now().add(timeout);
+    StreamSubscription<VlessStatus>? sub;
+    sub = _v2ray.onStatusChanged.listen((s) {
+      status.value = s;
+    });
+
+    try {
+      while (DateTime.now().isBefore(deadline)) {
+        if (status.value.state.toUpperCase() == 'DISCONNECTED') return;
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      }
+      status.value = VlessStatus(state: 'DISCONNECTED');
+    } finally {
+      await sub.cancel();
+    }
+  }
 
   void dispose() {
     _statusSub?.cancel();
